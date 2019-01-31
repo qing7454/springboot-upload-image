@@ -5,6 +5,8 @@ import com.qing.springboot.service.ImageService;
 import com.qing.springboot.service.StorageService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,8 +21,8 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Iterator;
-import java.util.List;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 @RestController
 @Slf4j
@@ -28,6 +30,8 @@ public class FileUploadController {
 
     private final ImageService imageService;
     private final StorageService storageService;
+    @Value("${upload.path}")
+    private String imgPath;
 
     @Autowired
     public FileUploadController(ImageService imageService, StorageService storageService) {
@@ -38,7 +42,7 @@ public class FileUploadController {
     @PostMapping(value = "upload")
     public String singletonUpload(HttpServletRequest request, HttpServletResponse response) {
         Long l1 = System.currentTimeMillis();
-        File uploadFile = new File("E:\\app\\images");
+        File uploadFile = new File(imgPath);
         CommonsMultipartResolver multipartResolver = new CommonsMultipartResolver();
         if (!multipartResolver.isMultipart(request)) {
             return null;
@@ -46,12 +50,12 @@ public class FileUploadController {
         MultipartHttpServletRequest multipartHttpServletRequest = (MultipartHttpServletRequest) request;
         Iterator<String> fileNames = multipartHttpServletRequest.getFileNames();
         MultipartFile file = multipartHttpServletRequest.getFile(fileNames.next());
-        String fileName = file.getOriginalFilename();
+        String fileName = Objects.requireNonNull(file).getOriginalFilename();
         if (!uploadFile.exists()) {
             uploadFile.mkdirs();
         }
         try {
-            file.transferTo(new File(uploadFile, fileName));
+            file.transferTo(new File(uploadFile, Objects.requireNonNull(fileName)));
             Long l2 = System.currentTimeMillis();
             log.info("time: {}", l2-l1);
             return "上传成功";
@@ -64,27 +68,54 @@ public class FileUploadController {
     }
 
     @PostMapping(value = "batch")
-    public String batchUpload(HttpServletRequest request, HttpServletResponse response) {
+    public String batchUpload(String description, HttpServletRequest request, HttpServletResponse response) {
         CommonsMultipartResolver multipartResolver = new CommonsMultipartResolver();
         String realPath = request.getSession().getServletContext().getRealPath("/");
+
+        System.out.println("说说内容="+description);
         log.info("path: {}", realPath);
         if (multipartResolver.isMultipart(request)) {
-            File uploadPath = new File("E:\\app\\images\\batch");
+            File uploadPath = new File(imgPath);
             if (!uploadPath.exists()) uploadPath.mkdirs();
             List<MultipartFile> files = ((MultipartHttpServletRequest) request).getFiles("file");
-            for (MultipartFile multipartFile: files) {
-                String fileName = multipartFile.getOriginalFilename();
-                try {
-                    multipartFile.transferTo(new File(uploadPath, fileName));
-                } catch (IOException e) {
-                    e.printStackTrace();
-                    return "文件名为"+fileName+"上传失败,错误："+e;
+
+            if (null == files || files.isEmpty()) {
+                MultiValueMap<String, MultipartFile> fileMultiValueMap = ((MultipartHttpServletRequest) request).getMultiFileMap();
+                for (int i = 0; i < fileMultiValueMap.size(); i++) {
+                    List<MultipartFile> fileList = fileMultiValueMap.get("file"+i);
+                    saveFile(fileList, imgPath);
                 }
+            } else {
+                System.out.println("上传的文件="+ files);
+                saveFile(files, imgPath);
             }
         } else {
             return "文件上传失败因为文件为空";
         }
         return "上传成功";
+    }
+
+    private void saveFile(List<MultipartFile> files, String uploadPath) {
+        for (MultipartFile multipartFile: files) {
+            multipartFile.getContentType();
+            String fileName = Optional.ofNullable(multipartFile.getOriginalFilename()).orElse("");
+            try {
+                Image image = new Image();
+                String uid = UUID.randomUUID().toString().replaceAll("-", "");
+                String suffix = fileName.substring(fileName.lastIndexOf("."));
+                String fname = uid+suffix.toLowerCase();
+                image.setFilename(fname);
+                SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                image.setGmtUpload(formatter.format(new Date()));
+                image.setId(uid);
+                multipartFile.transferTo(new File(uploadPath, fname));
+                storageService.store(multipartFile, image);
+                imageService.addImage(image);
+            } catch (IOException e) {
+                e.printStackTrace();
+                return;
+            }
+        }
     }
 
     @GetMapping("/download/{id}")

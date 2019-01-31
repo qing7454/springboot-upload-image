@@ -1,18 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
     <title>Title</title>
+    <style>
+        .img_head,img{
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
+<div class="img_head"><img th:src="@{/tree.jpg}" width="120" height="120"></div>
 <p>单文件上传</p>
-<form action="upload" method="POST" enctype="multipart/form-data">
-    文件：<input type="file" name="file"/>
+<form action="/images/upload" method="POST" enctype="multipart/form-data">
+    文件：<input type="file" name="image"/>
     <input type="submit"/>
 </form>
 <hr/>
 <p>文件下载</p>
-<a href="download">下载文件</a>
+<a th:href="@{/images/downloadBatch(certId=122, certName='test')}">打包ZIP下载测试</a>
 <hr/>
 <p>多文件上传</p>
 <form method="POST" enctype="multipart/form-data" action="batch">
